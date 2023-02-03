@@ -1,1 +1,13 @@
-/target
+*
+!.gitignore
+!README.md
+!Cargo.toml
+
+!src
+!src/*
+
+!shaders
+!shaders/
+
+!assets
+!assets/
