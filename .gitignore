@@ -7,7 +7,7 @@
 !src/*
 
 !shaders
-!shaders/
+!shaders/*
 
 !assets
-!assets/
+!assets/*
