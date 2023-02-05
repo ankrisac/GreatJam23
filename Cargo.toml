@@ -13,3 +13,10 @@ env_logger = "0.10.0"
 pollster = "0.2.5"
 
 bytemuck = { version = "1.13", features = [ "derive" ] }
+
+json = "0.12.4"
+
+[dependencies.image]
+version = "0.24"
+default-features = false
+features = ["png", "jpeg"]
