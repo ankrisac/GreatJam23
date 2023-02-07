@@ -1,5 +1,3 @@
-use wgpu::util::DeviceExt;
-
 use crate::graphics::*;
 use crate::nvec::*;
 
@@ -160,7 +158,7 @@ impl SpriteRenderer {
                 push_constant_ranges: &[],
             });
 
-        let module = load_shader(gfx, "shaders/sprite.wgsl");
+        let module = gfx.load_shader("shaders/sprite.wgsl");
 
         let pipeline = gfx
             .device

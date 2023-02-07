@@ -26,7 +26,7 @@ impl Graphics {
             height: size.height,
             present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Inherit,
-            view_formats: vec![wgpu::TextureFormat::Bgra8UnormSrgb],
+            view_formats: vec![],
         };
 
         let adapter = instance
@@ -42,7 +42,9 @@ impl Graphics {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("Graphics"),
-                    features: wgpu::Features::empty(),
+                    
+                    // Note: remove later
+                    features: wgpu::Features::POLYGON_MODE_LINE,
                     limits: wgpu::Limits::downlevel_webgl2_defaults(),
                 },
                 None,
@@ -88,20 +90,25 @@ impl Graphics {
             }
         }
     }
+
+    pub fn load_shader(&self, path: &str) -> wgpu::ShaderModule {
+        let source =
+            std::fs::read_to_string(path).expect(format!("unable to read file {path}").as_str());
+
+        self.device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some(path),
+                source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(&source)),
+            })
+    }
 }
 
 pub struct Frame {
-    pub output: wgpu::SurfaceTexture,
+    output: wgpu::SurfaceTexture,
     pub view: wgpu::TextureView,
 }
-
-pub fn load_shader(gfx: &Graphics, path: &str) -> wgpu::ShaderModule {
-    let source =
-        std::fs::read_to_string(path).expect(format!("unable to read file {path}").as_str());
-
-    gfx.device
-        .create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some(path),
-            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(&source)),
-        })
+impl Frame {
+    pub fn present(self) {
+        self.output.present();
+    }
 }
