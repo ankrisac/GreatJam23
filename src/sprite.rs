@@ -4,8 +4,8 @@ use crate::nvec::*;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Sprite {
-    pub pos: Vec3,
-    pub color: Vec4,
+    pub pos: Vec3<f32>,
+    pub color: Vec4<f32>,
     pub rot: f32,
 }
 impl Sprite {
