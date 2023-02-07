@@ -1,4 +1,6 @@
 use crate::graphics::{Frame, Graphics};
+use crate::nvec::*;
+
 
 struct FontAtlas {
     texture: wgpu::Texture,
@@ -108,7 +110,8 @@ impl FontAtlas {
     }
 }
 
-use crate::nvec::*;
+
+
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Zeroable, bytemuck::Pod)]
@@ -223,6 +226,8 @@ impl Config {
     }
 }
 
+
+
 pub struct TextRenderer {
     pipeline: wgpu::RenderPipeline,
 
@@ -271,7 +276,7 @@ impl TextRenderer {
                     module: &module,
                     entry_point: "frag_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: gfx.config.format,
+                        format: gfx.get_format(),
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],

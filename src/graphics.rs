@@ -1,9 +1,8 @@
 use winit::window::Window;
 
 pub struct Graphics {
-    pub surface: wgpu::Surface,
-    pub config: wgpu::SurfaceConfiguration,
-    pub size: winit::dpi::PhysicalSize<u32>,
+    surface: wgpu::Surface,
+    config: wgpu::SurfaceConfiguration,
 
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -42,7 +41,7 @@ impl Graphics {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("Graphics"),
-                    
+
                     // Note: remove later
                     features: wgpu::Features::POLYGON_MODE_LINE,
                     limits: wgpu::Limits::downlevel_webgl2_defaults(),
@@ -55,15 +54,20 @@ impl Graphics {
         Self {
             surface,
             config,
-            size,
             device,
             queue,
         }
     }
 
+    pub fn get_size(&self) -> (u32, u32) {
+        (self.config.width, self.config.height)
+    }
+    pub fn get_format(&self) -> wgpu::TextureFormat {
+        self.config.format
+    }
+
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width != 0 && new_size.height != 0 {
-            self.size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
@@ -82,7 +86,9 @@ impl Graphics {
                 match err {
                     wgpu::SurfaceError::Timeout => {}
                     wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost => {
-                        self.resize(self.size)
+                        let new_size =
+                            winit::dpi::PhysicalSize::new(self.config.width, self.config.height);
+                        self.resize(new_size);
                     }
                     wgpu::SurfaceError::OutOfMemory => println!("Graphics: out of memory"),
                 }
