@@ -1,17 +1,29 @@
 mod glyph;
 mod graphics;
 mod gui;
-
 mod input;
-
 mod nvec;
 mod sprite;
 
 use crate::graphics::*;
 use crate::nvec::*;
-use crate::gui::Text;
+use crate::sprite::*;
 
+use winit::event::KeyboardInput;
 use winit::window::Window;
+
+struct Region {}
+
+struct Player {
+    mesh: SpriteGroup,
+}
+impl Player {
+    fn new(gfx: &Graphics) -> Self {
+        let mesh = SpriteGroup::new(gfx, "Player.png", 1);
+
+        Self { mesh }
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PageState {
@@ -31,10 +43,9 @@ struct App {
     gfx: Graphics,
     glyph: glyph::GlyphRenderer,
     ui: gui::UserInterface,
+
     input: input::Input,
-
     page: PageState,
-
     settings: Settings,
 }
 impl App {
@@ -49,7 +60,10 @@ impl App {
             .expect("Unable to create window");
 
         let gfx = Graphics::new(&window).await;
+
         let glyph = glyph::GlyphRenderer::new(&gfx);
+        //let spriter = SpriteRenderer::new(&gfx);
+
         let ui = gui::UserInterface::new();
         let input = input::Input::new();
 
@@ -63,6 +77,7 @@ impl App {
             input,
             page,
             settings,
+
         }
     }
 
@@ -89,14 +104,6 @@ impl App {
                 depth_stencil_attachment: None,
             });
 
-            let cursor = crate::glyph::Glyph {
-                pos: vec3(self.input.mouse.pos.x, self.input.mouse.pos.y, 0.0),
-                codepoint: b'^' as u32,
-                scale: self.ui.glyph_size,
-                color: vec4(1.0, 0.0, 0.0, 1.0),
-            };
-
-            self.ui.glyphs.push(cursor);
             self.glyph.render(&self.gfx, &mut pass, &self.ui.glyphs);
         }
 
@@ -114,12 +121,15 @@ impl App {
             PageState::MainMenu => {
                 let left = f32::min(1.0, 52.0 * fx);
                 let top = f32::min(1.0, 16.0 * fy);
+
                 self.ui.anchor = vec2(-left, top);
                 self.ui.set_fontsize(12.0);
                 self.ui.label("Geomagika");
 
+                self.ui.anchor.y += -2.0 * fx;
                 self.ui.anchor.x += 10.0 * fx;
                 self.ui.set_fontsize(5.0);
+                
                 if self.ui.button("New Game").clicked {
                     return PageState::Game;
                 }
@@ -146,17 +156,10 @@ impl App {
                 }
             }
             PageState::Game => {
-                self.ui.anchor = vec2(0.0, 0.0);
-                self.ui.label("Game");
-
-                let mut out = PageState::Game;
-                if self.ui.button("Back").clicked {
-                    out = PageState::Settings;
+                self.ui.anchor = vec2(1.0, -1.0);
+                if self.ui.button("Quit").clicked {
+                    return PageState::MainMenu;
                 }
-                if self.ui.button("Back").clicked {
-                    out = PageState::Editor;
-                }
-                return out;
             }
             PageState::Settings => {
                 self.ui.anchor = vec2(0.0, 0.0);
@@ -181,9 +184,20 @@ impl App {
     }
 
     fn update(&mut self) -> PageState {
+        //self.input.mouse.refresh();
+        self.ui.mouse = self.input.mouse.clone();
+
         self.ui.glyphs.clear();
         self.ui.glyph_unit = self.glyph.get_scale(self.gfx.get_size());
-        self.ui.mouse = self.input.mouse.clone();
+
+        let cursor = crate::glyph::Glyph {
+            pos: vec3(self.input.mouse.pos.x, self.input.mouse.pos.y, 0.0),
+            codepoint: b'^' as u32,
+            scale: self.ui.glyph_size,
+            color: vec4(0.6, 0.3, 0.8, 1.0),
+        };
+
+        self.ui.glyphs.push(cursor);
 
         self.page = self.pager();
         self.page
@@ -204,7 +218,12 @@ fn main() {
             WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                 app.gfx.resize(*new_inner_size)
             }
-            WindowEvent::KeyboardInput { input, .. } => {}
+            WindowEvent::KeyboardInput {
+                input: KeyboardInput {
+                    virtual_keycode, state, ..
+                },
+                ..
+            } => {}
             WindowEvent::CursorMoved { position, .. } => {
                 let size = app.window.inner_size();
 
@@ -216,15 +235,15 @@ fn main() {
             WindowEvent::MouseInput { state, button, .. } => {
                 app.input.mouse.set_state(state, button);
             }
-
+            WindowEvent::CursorEntered { .. } => app.window.set_cursor_visible(false),
+            WindowEvent::CursorLeft { .. } => app.window.set_cursor_visible(true),
             _ => {}
         },
         Event::MainEventsCleared => {
             if app.update() != PageState::Exit {
                 app.render();
                 app.window.request_redraw();
-            }
-            else {
+            } else {
                 *flow = ControlFlow::Exit
             }
         }

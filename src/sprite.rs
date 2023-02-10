@@ -1,40 +1,17 @@
-use crate::graphics::*;
+use std::collections::HashMap;
+
+use crate::graphics::Graphics;
 use crate::nvec::*;
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Sprite {
-    pub pos: Vec3<f32>,
-    pub color: Vec4<f32>,
-    pub rot: f32,
-}
-impl Sprite {
-    const ATTRIBUTES: &[wgpu::VertexAttribute] = &wgpu::vertex_attr_array![
-        0 => Float32x3,
-        1 => Float32x4,
-        2 => Float32,
-        3 => Float32
-    ];
-
-    const fn layout<'a>() -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Sprite>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::ATTRIBUTES,
-        }
-    }
-}
 
 struct Atlas {
     texture: wgpu::Texture,
-
-    bindgroup: wgpu::BindGroup,
+    bind_group: wgpu::BindGroup,
 }
 impl Atlas {
-    fn bind_group_layout(gfx: &Graphics) -> wgpu::BindGroupLayout {
+    fn layout(gfx: &Graphics) -> wgpu::BindGroupLayout {
         gfx.device
             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Atlas.Texture"),
+                label: Some("SpriteRenderer.Atlas.BindGroupLayout"),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
@@ -56,50 +33,41 @@ impl Atlas {
             })
     }
 
-    fn new(gfx: &Graphics) -> Self {
-        let diffuse_bytes =
-            std::fs::read("assets/teapot.png").expect("unable to open [assets/teapot.png]");
+    fn new(gfx: &Graphics, path: &str) -> Self {
+        use wgpu::util::DeviceExt;
 
-        let diffuse_image = image::load_from_memory(diffuse_bytes.as_slice())
-            .expect("unable to parse [assets/teapot.png]");
+        let image_file = std::fs::read(path).expect(format!("Cannot read {path}").as_str());
+
+        let image = image::load_from_memory(&image_file)
+            .expect(format!("Could not parse file {path}").as_str());
 
         let extent = wgpu::Extent3d {
-            width: diffuse_image.width(),
-            height: diffuse_image.height(),
+            width: image.width(),
+            height: image.height(),
             depth_or_array_layers: 1,
         };
 
-        let texture = gfx.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Atlas.Texture"),
-            size: extent,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
+        let texture = gfx.device.create_texture_with_data(
+            &gfx.queue,
+            &wgpu::TextureDescriptor {
+                label: Some(format!("SpriteRenderer.Atlas[{path}].Texture").as_str()),
+                size: extent,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            },
+            &image.to_rgba8(),
+        );
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some(format!("SpriteRenderer.Atlas[{path}].TextureView").as_str()),
+            ..Default::default()
         });
 
-        gfx.queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &diffuse_image.to_rgba8(),
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: std::num::NonZeroU32::new(4 * extent.width),
-                rows_per_image: std::num::NonZeroU32::new(extent.height),
-            },
-            extent,
-        );
-
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
         let sampler = gfx.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Atlas.Sampler"),
+            label: Some(format!("SpriteRenderer.Atlas[{path}].Sampler").as_str()),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -108,10 +76,9 @@ impl Atlas {
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
-
-        let bindgroup = gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Atlas.BindGroup"),
-            layout: &&Self::bind_group_layout(gfx),
+        let bind_group = gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(format!("SpriteRenderer.Atlas[{path}].BindGroup").as_str()),
+            layout: &Self::layout(gfx),
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -124,41 +91,73 @@ impl Atlas {
             ],
         });
 
-        Self { texture, bindgroup }
+        Self {
+            texture,
+            bind_group,
+        }
     }
 }
 
-pub struct SpriteRenderer {
-    pipeline: wgpu::RenderPipeline,
-    mesh_data: wgpu::Buffer,
-
-    data: Vec<Sprite>,
-
-    texture: Atlas,
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Zeroable, bytemuck::Pod)]
+pub struct UVRect {
+    pub a: Vec2<f32>,
+    pub b: Vec2<f32>,
 }
-impl SpriteRenderer {
-    const MAX_SPRITES: wgpu::BufferAddress = 1024 * 1024;
 
-    pub fn new(gfx: &Graphics) -> Self {
-        let mut data = Vec::new();
-        data.reserve_exact(Self::MAX_SPRITES as _);
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Zeroable, bytemuck::Pod)]
+pub struct Sprite {
+    pub pos: Vec3<f32>,
+    pub scale: Vec2<f32>,
+    pub color: Vec4<f32>,
+    pub rect: UVRect,
+}
 
-        let mesh_data = gfx.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("SpriteRenderer.MeshData"),
-            size: Self::MAX_SPRITES * std::mem::size_of::<Sprite>() as wgpu::BufferAddress,
+pub struct SpriteGroup {
+    atlas: Atlas,
+    data: Vec<Sprite>,
+    buffer: wgpu::Buffer,
+}
+impl SpriteGroup {
+    const MAX_SIZE: wgpu::BufferAddress = 128 * 1024;
+
+    pub fn new(gfx: &Graphics, atlas_path: &str, instances: usize) -> Self {
+        let atlas = Atlas::new(gfx, atlas_path);
+
+        let data = Vec::new();
+        let buffer = gfx.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("SpriteGroup"),
+            size: Self::MAX_SIZE * std::mem::size_of::<Sprite>() as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
+        Self {
+            atlas,
+            data,
+            buffer,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AtlasID(usize);
+
+pub struct SpriteRenderer {
+    pipeline: wgpu::RenderPipeline,
+}
+impl SpriteRenderer {
+    pub fn new(gfx: &Graphics) -> Self {
         let layout = gfx
             .device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("SpriteRenderer.Pipeline.Layout"),
-                bind_group_layouts: &[&Atlas::bind_group_layout(gfx)],
+                bind_group_layouts: &[&Atlas::layout(gfx)],
                 push_constant_ranges: &[],
             });
 
-        let module = gfx.load_shader("shaders/sprite.wgsl");
+        let shader = gfx.load_shader("shaders/sprite.wgsl");
 
         let pipeline = gfx
             .device
@@ -166,9 +165,9 @@ impl SpriteRenderer {
                 label: Some("SpriteRenderer.Pipeline"),
                 layout: Some(&layout),
                 vertex: wgpu::VertexState {
-                    module: &module,
+                    module: &shader,
                     entry_point: "vert_main",
-                    buffers: &[Sprite::layout()],
+                    buffers: &[],
                 },
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
@@ -186,47 +185,27 @@ impl SpriteRenderer {
                     alpha_to_coverage_enabled: false,
                 },
                 fragment: Some(wgpu::FragmentState {
-                    module: &module,
+                    module: &shader,
                     entry_point: "frag_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                        blend: None,
+                        format: gfx.get_format(),
+                        blend: Some(wgpu::BlendState::REPLACE),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
                 multiview: None,
             });
 
-        let texture = Atlas::new(gfx);
-
         Self {
             pipeline,
-            mesh_data,
-            data,
-            texture,
         }
     }
-    pub fn render<'a>(&'a mut self, gfx: &Graphics, pass: &mut wgpu::RenderPass<'a>) {
-        gfx.queue.write_buffer(
-            &self.mesh_data,
-            0,
-            bytemuck::cast_slice(self.data.as_slice()),
-        );
 
-        pass.set_bind_group(0, &self.texture.bindgroup, &[]);
+    fn render<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, groups: impl Iterator<Item = &'a SpriteGroup>) {
         pass.set_pipeline(&self.pipeline);
-        pass.set_vertex_buffer(0, self.mesh_data.slice(..));
-        pass.draw(0..6, 0..self.data.len() as u32);
-    }
-
-    pub fn draw(&mut self, sprite: Sprite) {
-        if self.data.len() < Self::MAX_SPRITES as _ {
-            self.data.push(sprite);
-        } else {
-            eprintln!("Skipping sprite: too many sprites");
+        for group in groups {
+            pass.set_bind_group(0, &group.atlas.bind_group, &[]);
+            pass.set_vertex_buffer(0, group.buffer.slice(..));
         }
-    }
-    pub fn clear(&mut self) {
-        self.data.clear();
     }
 }

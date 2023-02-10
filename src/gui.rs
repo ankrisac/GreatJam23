@@ -94,6 +94,7 @@ impl From<&str> for Text {
 pub struct Response {
     pub clicked: bool,
     pub hover: bool,
+    pub active: bool,
 }
 
 pub struct UserInterface {
@@ -143,6 +144,8 @@ impl UserInterface {
 
         let mut response = Response::default();
         if self.active == id {
+            response.active = true;
+
             if self.mouse.released() {
                 if self.hot == block.get_id() {
                     response.clicked = true;
@@ -151,6 +154,8 @@ impl UserInterface {
             }
         } else if self.hot == id {
             if self.mouse.pressed() {
+                response.active = true;
+
                 self.active.clear();
                 self.active.push_str(&id);
             }
@@ -162,11 +167,11 @@ impl UserInterface {
             self.hot.push_str(&id);
         }
 
-        let mut color = vec4(1.0, 1.0, 1.0, 1.0);
-        if response.clicked {
-            color = vec4(0.6, 0.3, 0.8, 1.0);
-        } else if response.hover {
+        let mut color = vec4(1.0, 1.0, 1.0, 1.0);        
+        if response.hover {
             color = vec4(0.2, 0.4, 0.8, 1.0);
+        } else if response.active {
+            color = vec4(0.9, 0.2, 0.3, 1.0);
         }
 
         self.anchor.y = block.paint(self, color).y - self.glyph_size.y;
